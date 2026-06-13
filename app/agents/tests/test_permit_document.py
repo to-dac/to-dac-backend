@@ -115,6 +115,9 @@ def test_extraction_prompt_always_fills_with_generation():
     assert "임의로 생성" in prompt
     assert 'source="generated"' in prompt
     assert "추측 금지" not in prompt
+    # 숫자 생성 규칙: 독립 숫자는 다르게, 수량은 1000 미만.
+    assert "1000 미만" in prompt
+    assert "같은 값으로 채우지 마라" in prompt
 
 
 def test_conversation_transcript_keeps_human_and_ai():
