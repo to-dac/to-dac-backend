@@ -50,6 +50,20 @@ class _MsgAgent:
         return SimpleNamespace(values={"messages": self._messages})
 
 
+class _RecordingAgent:
+    """aget_state + aupdate_state 를 기록하는 가짜 에이전트."""
+
+    def __init__(self, messages: list | None = None) -> None:
+        self._messages = messages or []
+        self.updates: list = []
+
+    async def aget_state(self, config):
+        return SimpleNamespace(values={"messages": self._messages})
+
+    async def aupdate_state(self, config, values):
+        self.updates.append((config, values))
+
+
 def _radio_q() -> Question:
     return Question(
         id=112,
@@ -247,6 +261,31 @@ async def test_fill_saves_baseline_snapshot(monkeypatch):
 
     assert "th-snap" in permit_document._SNAPSHOTS
     assert permit_document._SNAPSHOTS["th-snap"].template.templateCode == "mountain_permit"
+
+
+@pytest.mark.asyncio
+async def test_fill_records_document_summary_in_thread(monkeypatch):
+    """생성 시 작성 요약을 assistant 메시지로 thread 에 append 한다."""
+
+    async def fake_extract(land_info, transcript, questions):
+        return _ExtractionResult(
+            answers=[_AnswerItem(question_id=1, value="홍길동", source="conversation")]
+        )
+
+    monkeypatch.setattr(permit_document, "_extract_answers", fake_extract)
+    agent = _RecordingAgent()
+    body = PermitDocumentRequest(
+        thread_id="th-rec", land_info={"pnu": "1"}, permit_type="mountain"
+    )
+    await fill_permit_document(agent, body)
+
+    assert agent.updates, "thread 에 작성 이력 메시지가 append 되어야 한다"
+    config, values = agent.updates[-1]
+    assert config["configurable"]["thread_id"] == "th-rec"
+    msg = values["messages"][0]
+    assert msg["role"] == "assistant"
+    assert "서류 작성" in msg["content"]
+    assert "홍길동" in msg["content"]
 
 
 @pytest.mark.asyncio

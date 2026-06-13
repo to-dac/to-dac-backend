@@ -1,4 +1,4 @@
-# 인허가 문서 자동작성 로직 — 필지·대화 근거로 양식 질문을 채운다(A1: 채팅 에이전트는 읽기만)
+# 인허가 문서 자동작성 로직 — 필지·대화 근거로 양식을 채우고, 작성 이력을 thread 에 남긴다
 from __future__ import annotations
 
 import json
@@ -219,9 +219,10 @@ async def fill_permit_document(agent, body: PermitDocumentRequest) -> PermitDocu
             )
         )
 
-    # 베이스라인 스냅샷 저장 — 이후 채팅 턴에서 이 시점 대비 변경분을 감지한다.
+    # 베이스라인 스냅샷 저장 + 작성 이력을 thread 대화에 남긴다(이후 턴 맥락·변경 감지 기준).
     if body.thread_id:
         _save_snapshot(body.thread_id, template, land_info, snapshot_answers)
+        await _record_document_in_thread(agent, body.thread_id, template, questions, snapshot_answers)
 
     return PermitDocumentResponse(
         thread_id=body.thread_id,
@@ -252,6 +253,45 @@ def _save_snapshot(
     _SNAPSHOTS[thread_id] = _DocumentSnapshot(
         template=template, land_info=land_info, answers=dict(answers)
     )
+
+
+def _summarize_document(
+    template: DocumentTemplate, questions: list[Question], answers: dict[int, str | None]
+) -> str:
+    """작성된 문서를 thread 에 남길 한국어 요약 텍스트로 만든다."""
+    form_name = template.name or template.templateCode or "신청서"
+    lines = [
+        f"- {q.name}: {answers.get(q.id)}"
+        for q in questions
+        if answers.get(q.id) not in (None, "")
+    ]
+    header = f"[서류 작성] '{form_name}' 양식을 작성했습니다 (채움 {len(lines)}/{len(questions)} 항목)."
+    if not lines:
+        return header
+    return f"{header}\n채운 항목:\n" + "\n".join(lines)
+
+
+async def _record_document_in_thread(
+    agent,
+    thread_id: str,
+    template: DocumentTemplate,
+    questions: list[Question],
+    answers: dict[int, str | None],
+) -> None:
+    """작성 요약을 assistant 메시지로 thread 대화에 append 한다(best-effort).
+
+    상태 기록 실패가 문서 생성 자체를 깨지 않도록 예외는 경고 로그로만 처리한다.
+    """
+    if agent is None:
+        return
+    summary = _summarize_document(template, questions, answers)
+    try:
+        await agent.aupdate_state(
+            {"configurable": {"thread_id": thread_id}},
+            {"messages": [{"role": "assistant", "content": summary}]},
+        )
+    except Exception:
+        logger.warning("서류 작성 이력 thread 기록 실패 (thread_id=%s)", thread_id)
 
 
 async def detect_document_changes(agent, thread_id: str | None) -> list[DocumentChange]:
