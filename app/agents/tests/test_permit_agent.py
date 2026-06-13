@@ -12,6 +12,7 @@ from app.agents.permits import (
     PERMITS,
     PROCEDURE_DIR,
     build_docs_index,
+    build_forms_index,
     format_land_context,
     get_permit,
 )
@@ -38,6 +39,14 @@ def test_docs_index_lists_all_codes() -> None:
     for permit in PERMITS:
         assert permit.code.value in index
         assert permit.doc_path in index
+
+
+def test_forms_index_lists_all_form_paths() -> None:
+    """서식 인덱스가 6개 유형의 신청서 서식 경로를 모두 노출한다."""
+    index = build_forms_index()
+    for permit in PERMITS:
+        assert permit.form_doc_path is not None
+        assert permit.form_doc_path in index
 
 
 def test_get_permit_unknown_returns_none() -> None:

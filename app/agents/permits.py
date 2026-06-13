@@ -54,6 +54,12 @@ class PermitDoc:
             return None
         return f"{DOCUMENT_DIR}/{self.form_filename}"
 
+    @property
+    def form_doc_path(self) -> str | None:
+        """에이전트가 read_file 에 쓰는 서식 가상 경로. 예: /docs/서류 정보/산지전용 허가 신청서.md"""
+        rel = self.form_rel_path
+        return f"{DOCS_MOUNT}/{rel}" if rel else None
+
 
 # 6개 인허가 유형 ↔ docs/ 파일 매핑. 새 유형은 docs/ 에 .md 추가 후 여기 1줄 등록한다.
 PERMITS: tuple[PermitDoc, ...] = (
@@ -177,5 +183,19 @@ def build_docs_index() -> str:
     lines = [
         f"- {p.code.value} : {p.name} → {p.doc_path}  (키워드: {', '.join(p.keywords)})"
         for p in PERMITS
+    ]
+    return "\n".join(lines)
+
+
+def build_forms_index() -> str:
+    """시스템 프롬프트에 주입할 신청서 서식 인덱스 텍스트를 만든다.
+
+    유형별 서식 문서 경로만 노출한다. 항목명·작성 양식은 필요한 턴에
+    read_file(form_doc_path)로 직접 읽는다.
+    """
+    lines = [
+        f"- {p.code.value} : {p.name} 신청서 → {p.form_doc_path}"
+        for p in PERMITS
+        if p.form_doc_path
     ]
     return "\n".join(lines)
